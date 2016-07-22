@@ -16,7 +16,7 @@ p.log <- function(x) {
 par(mfrow=c(2,2))
 
 #test random walk mcmc
-banana_out <- rw_mcmc(target=p.log,theta_init=c(10,10),sigma=diag(c(1,1)),iterations=2e4,info=1e3)
+banana_out <- rw_mcmc(target=p.log,theta_init=c(10,10),sigma=diag(c(1,1)),iterations=1e3,info=1e2)
 
 x1 <- seq(-15, 15, length=100)
 x2 <- seq(-15, 15, length=100)
@@ -28,7 +28,7 @@ lines(banana_out$trace, type='l')
 matplot(banana_out$trace,type="l")
 
 #test adaptive mcmc
-banana_adapt_out <- adapt_mcmc(target=p.log,theta_init=c(10,10),sigma=diag(c(1,1)),cooling=0.99,adapt_size=10,adapt_shape=20,iterations=5e5,info=1e4)
+banana_adapt_out <- adapt_mcmc(target=p.log,theta_init=c(10,10),sigma=diag(c(1,1)),cooling=0.99,adapt_size=10,adapt_shape=20,iterations=1e3,info=1e2)
 
 image(x1, x2, exp(d.banana), col=cm.colors(60))
 contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
@@ -40,6 +40,7 @@ par(mfrow=c(1,1))
 
 
 #try fitR package version of adaptive mcmc
+library(fitR)
 p.log.fitR <- function(x) {
   x1 <- x[["par1"]]
   x2 <- x[["par2"]]
@@ -49,7 +50,7 @@ p.log.fitR <- function(x) {
 
 covmat_fitR <- matrix(c(1,0,0,1),2,2,dimnames=list(c("par1","par2"),c("par1","par2")))
 
-banana_fitR_out <- mcmcMH(target=p.log.fitR,init.theta=c(par1=10,par2=10),covmat=covmat_fitR,adapt.size.start=250,adapt.shape.start=500,n.iterations=2e4)
+banana_fitR_out <- mcmcMH(target=p.log.fitR,init.theta=c(par1=10,par2=10),covmat=covmat_fitR,adapt.size.start=10,adapt.shape.start=20,n.iterations=1e3)
 
 par(mfrow=c(1,2))
 
@@ -75,7 +76,7 @@ par(mfrow=c(1,1))
 
 ###testing the sigma_empirical updating function
 cov_mat <- matrix(c(5,0,0,0.1),2,2)
-residual <- c(0,0)
+residual <- c(.25,1.5)
 i <- 2
 
 update_sigmaR <- function(cov_mat,residual,i){
@@ -87,8 +88,15 @@ update_sigmaR(cov_mat,residual,i)
 
 update_sigma(cov_mat,residual,i)
 
+# cppFunction(code="arma::mat update_sigmaC(arma::mat cov_mat, arma::vec residual, int i){
+#   arma::mat out = (cov_mat * (i-1) + (i+1)/i*residual * residual.t())/i;
+#   return(out);
+# }",depends=c("RcppArmadillo"))
+
 cppFunction(code="arma::mat update_sigmaC(arma::mat cov_mat, arma::vec residual, int i){
-  arma::mat out = (cov_mat * (i-1) + (i+1)/i*residual * residual.t())/i;
+  arma::mat out;
+  out = cov_mat * i;
+  Rcout << out << std::endl;
   return(out);
 }",depends=c("RcppArmadillo"))
 

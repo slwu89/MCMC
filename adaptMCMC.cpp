@@ -6,8 +6,7 @@ using namespace Rcpp;
 // Sampling from multivariate Gaussian
 // [[Rcpp::export]]
 arma::rowvec mvrnorm_cpp(arma::vec mu, arma::mat sigma) {
-  int ncols = sigma.n_cols;
-  arma::vec Y = arma::randn(ncols);
+  arma::vec Y = arma::randn(sigma.n_cols);
   return(arma::trans(mu + Y) * arma::chol(sigma));
 }
 
@@ -68,7 +67,7 @@ List rw_mcmc(Function target, arma::vec theta_init, arma::mat sigma, int iterati
     arma::vec armaRand = arma::randu(1);
     double r_num;
     r_num = as<double>(wrap(armaRand(0)));
-    if(r_num < exp(A)){
+    if(log(r_num) < A){
       theta_i = theta_star.t(); //update current value of theta
       target_i = target_star; //update current value of target
       acc = true; //record acceptance
@@ -177,7 +176,7 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
     arma::vec armaRand = arma::randu(1);
     double r_num;
     r_num = as<double>(wrap(armaRand(0)));
-    if(r_num < exp(A)){
+    if(log(r_num) < A){
       theta_i = theta_star.t(); //update current value of theta
       target_i = target_star; //update current value of target
       acc = true; //record acceptance

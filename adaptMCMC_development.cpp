@@ -3,17 +3,9 @@
 using namespace Rcpp;
 
 
-// // Sampling from multivariate Gaussian
-// // [[Rcpp::export]]
-// arma::rowvec mvrnorm_cpp(arma::vec mu, arma::mat sigma) {
-//   arma::vec Y = arma::randn(sigma.n_cols);
-//   return(arma::trans(mu + Y) * arma::chol(sigma));
-// }
-
-
 // Sampling from multivariate Gaussian
 // [[Rcpp::export]]
-arma::vec mvrnorm_cpp(arma::vec mu, arma::mat sigma) {
+arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
   arma::vec Y = arma::randn(sigma.n_cols);
   arma::rowvec out = arma::trans(mu + Y) * arma::chol(sigma);
   return(out.t());
@@ -22,9 +14,30 @@ arma::vec mvrnorm_cpp(arma::vec mu, arma::mat sigma) {
 
 // Function to update empirical covariance matrix
 // [[Rcpp::export]]
-arma::mat update_sigma(arma::mat sigma, arma::vec residual, int i){
-  arma::mat out = (sigma * (i-1) + (i+1)/i*residual * residual.t())/i;
+arma::mat update_sigma(arma::mat sigma, arma::vec residual, double i){
+  arma::mat out = (sigma * (i-1) + (i-1) / i * residual * trans(residual)) / i;
   return(out);
+}
+
+
+// Function to evaluate PDF of multivariate Gaussian
+// [[Rcpp::export]]
+double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
+  
+  //define constants
+  int k = x.size();
+  double twoPi = 2 * M_PI;
+  double out;
+  
+  double rootTerm;
+  rootTerm = 1 / sqrt(pow(twoPi,k) * det(sigma));
+  arma::mat AexpTerm;
+  AexpTerm = exp(-0.5 * arma::trans(x - mu) * inv(sigma) * (x - mu));
+  double expTerm;
+  expTerm = AexpTerm(0,0);
+  
+  out = rootTerm * expTerm;
+  return(log(out));
 }
 
 
@@ -69,6 +82,12 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
   arma::mat sigma_empirical = arma::zeros(sigma.n_rows,sigma.n_cols); //empirical covariance matrix
   arma::vec theta_mean = theta_current; //empirical mean vector
   
+  //verbose output
+  arma::mat residual_trace = arma::zeros(iterations,theta_init.n_elem);
+  arma::mat theta_mean_trace = arma::zeros(iterations,theta_init.n_elem);
+  arma::cube sigma_empirical_trace = arma::zeros(theta_init.n_elem,theta_init.n_elem,iterations);
+  
+  
   //main MCMC loop
   for(int i=0; i<iterations; i++){
     
@@ -79,7 +98,7 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
         adapting_size = true;
       }
       //adapt size of sigma until we get enough accepted jumps
-      scaling_multiplier = exp(pow(cooling,i*adapt_size) * (acceptance_rate - 0.234));
+      scaling_multiplier = exp(pow(cooling,i-adapt_size) * (acceptance_rate - 0.234));
       scaling_sd = scaling_sd * scaling_multiplier;
       scaling_sd = std::min(scaling_sd,max_scaling_sd);
       //only scale if it doesn't reduce sigma to zero
@@ -95,6 +114,7 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
       //adapt shape of sigma using optimal scaling factor for multivariate target distribution
       scaling_sd = 2.38/sqrt(theta_init.n_elem);
       sigma_proposal = pow(scaling_sd,2) * sigma_empirical;
+      // Rcout << "sigma_proposal" << sigma_proposal << std::endl;
     }
     
     //print diagnostics
@@ -103,7 +123,7 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
     }
     
     //propose another parameter set
-    theta_propose = mvrnorm_cpp(theta_current,sigma_proposal);
+    theta_propose = mvrnorm_samp(theta_current,sigma_proposal);
     
     //evaluate posterior of proposed theta
     double target_theta_propose;
@@ -114,39 +134,52 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
     //if posterior is 0 then do not compute anything else and immediately reject
     if(!std::isfinite(target_theta_propose)){
       log_acceptance = -std::numeric_limits<double>::infinity();
+      Rcout << "0 posterior; immediate rejection" << std::endl;
     } else {
       //compute Metropolis-Hastings ratio (acceptance probability)
       log_acceptance = target_theta_propose - target_theta_current;
-      // double A = as<double>(runif(0,1));
+      log_acceptance = log_acceptance + mvrnorm_pdf(theta_current,theta_propose,sigma_proposal);
+      log_acceptance = log_acceptance - mvrnorm_pdf(theta_propose,theta_current,sigma_proposal);
       double A = R::runif(0,1);
       if(log(A) < log_acceptance){ //accept the proposal
         is_accepted = true;
         theta_current = theta_propose;
+        target_theta_current = target_theta_propose;
       } else { //reject the proposal
         is_accepted = false;
       }
     }
 
-    //update acceptance rate
+    //update acceptance rate & empirical covariance matrix
     if(i==0){
       acceptance_rate = is_accepted;
     } else {
       acceptance_rate = acceptance_rate + (is_accepted - acceptance_rate) / i;
     }
     
-    //update empirical covariance matrix 
-    arma::vec residual = theta_current - theta_mean;
-    theta_mean = theta_mean + (residual/i); //update empirical mean theta
-    sigma_empirical = update_sigma(sigma_empirical,residual,i); //update empirical covariance matrix
+    arma::vec residual = theta_current - theta_mean; //calculate current residual
+    sigma_empirical = update_sigma(sigma_empirical,residual,(i+1)); //update empirical covariance matrix
+    theta_mean = theta_mean + residual/(i+1); //update empirical mean theta
+    Rcout << "print theta_current" << theta_current << std::endl;
+    Rcout << "print residual" << residual << std::endl;
+    Rcout << "print theta_mean" << theta_mean << std::endl;
+    Rcout << "print sigma_empirical" << sigma_empirical << std::endl;
     
     //store trace information
     theta_samp.row(i) = theta_current.t();
     sigma_trace.slice(i) = sigma_proposal;
     
+    //verbose output
+    residual_trace.row(i) = residual.t();
+    theta_mean_trace.row(i) = theta_mean.t();
+    sigma_empirical_trace.slice(i) = sigma_empirical;
+    
   }
   
   //return output
-  return(List::create(Named("theta_trace")=theta_samp,Named("sigma_trace")=sigma_trace,Named("acceptance_rate")=acceptance_rate));
+  return(List::create(Named("theta_trace")=theta_samp,Named("sigma_trace")=sigma_trace,Named("acceptance_rate")=acceptance_rate,Named("residual_trace")=residual_trace,Named("theta_mean_trace")=theta_mean_trace,Named("sigma_empirical_trace")=sigma_empirical_trace));
+  
+  // return(List::create(Named("theta_trace")=theta_samp,Named("sigma_trace")=sigma_trace,Named("acceptance_rate")=acceptance_rate));
 }
 
 

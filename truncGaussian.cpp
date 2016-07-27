@@ -8,7 +8,7 @@ using namespace Rcpp;
 // mvrGaussian_density evaluates the PDF of the multivariate Gaussian distribution
 // plase note this function returns the un-logged PDF to avoid infinite values
 // [[Rcpp::export]]
-double mvrGaussian_pdf(arma::colvec x, arma::colvec mu, arma::mat sigma){
+double mvrGaussian_pdf(arma::vec x, arma::vec mu, arma::mat sigma, bool do_log = true){
   
   //define constants
   int k = x.size();
@@ -23,7 +23,12 @@ double mvrGaussian_pdf(arma::colvec x, arma::colvec mu, arma::mat sigma){
   expTerm = AexpTerm(0,0);
   
   out = rootTerm * expTerm;
-  return(out);
+  
+  if(do_log){
+    return(log(out));
+  } else {
+    return(out);
+  }
 }
 
 

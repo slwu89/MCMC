@@ -99,7 +99,7 @@ List rw_mcmc(Function target, arma::vec theta_init, arma::mat sigma, int iterati
  * info is the frequency of diagnostic information on the chain
  */
 // [[Rcpp::export]]
-List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double cooling, int adapt_size, int adapt_shape, int iterations, int info){
+List adapt_mcmcALPHA(Function target, arma::vec theta_init, arma::mat sigma, double cooling, int adapt_size, int adapt_shape, int iterations, int info){
 
   //prepare trace
   arma::vec theta_i = theta_init; //current value of theta

@@ -6,9 +6,16 @@ using namespace Rcpp;
 // MCMC utility functions
 // [[Rcpp::export]]
 arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
-  arma::vec Y = arma::randn(sigma.n_cols);
-  arma::rowvec out = arma::trans(mu + Y) * arma::chol(sigma);
+  arma::rowvec Y = rnorm(sigma.n_cols,0,1);
+  arma::rowvec out = mu.t() + Y * arma::chol(sigma);
   return(out.t());
+}
+
+// [[Rcpp::export]]
+arma::mat mvrnormArma(int n, arma::vec mu, arma::mat sigma) {
+  int ncols = sigma.n_cols; //how many columns in sigma (ie; how many dimension)
+  arma::mat Y = arma::randn(n, ncols); // n draws from N(0,1) 
+  return arma::repmat(mu, 1, n).t() + Y * arma::chol(sigma);
 }
 
 // [[Rcpp::export]]
@@ -169,27 +176,27 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
   
   
 /***R
-p.log <- function(x) {
-  B <- 0.03 # controls 'bananacity'
-  -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
-}
-
-bananaAdapt <- adaptMCMC(target=p.log,init_theta=c(5,-5),covmat=diag(c(1,1)),iterations=1e4,
-                         adapt_size_start=1e3,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=0,
-                         info=1e2)
-
-par(mfrow=c(1,2))
-
-x1 <- seq(-15, 15, length=100)
-x2 <- seq(-15, 15, length=100)
-d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
-image(x1, x2, exp(d.banana), col=cm.colors(60))
-contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
-lines(bananaAdapt$theta_trace, type='l')
-
-matplot(bananaAdapt$theta_trace,type="l")
-
-par(mfrow=c(1,1))
+# p.log <- function(x) {
+#   B <- 0.03 # controls 'bananacity'
+#   -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
+# }
+# 
+# bananaAdapt <- adaptMCMC(target=p.log,init_theta=c(5,-5),covmat=diag(c(1,1)),iterations=1e4,
+#                          adapt_size_start=1e3,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=0,
+#                          info=1e2)
+# 
+# par(mfrow=c(1,2))
+# 
+# x1 <- seq(-15, 15, length=100)
+# x2 <- seq(-15, 15, length=100)
+# d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
+# image(x1, x2, exp(d.banana), col=cm.colors(60))
+# contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
+# lines(bananaAdapt$theta_trace, type='l')
+# 
+# matplot(bananaAdapt$theta_trace,type="l")
+# 
+# par(mfrow=c(1,1))
 */
   
 //write simple adaptive routines later from john's email last year
@@ -212,6 +219,14 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
   
   arma::mat theta_trace = arma::zeros(n_iterations,init_theta.n_elem);
   arma::cube sigma_empirical = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
+  
+  //store extra stuff for debugging
+  arma::vec acceptance_trace = arma::zeros(n_iterations);
+  arma::vec target_theta_current_trace = arma::zeros(n_iterations);
+  arma::vec scaling_sd_trace = arma::zeros(n_iterations);
+  arma::cube covmat_proposal_trace = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
+  arma::mat residual_trace = arma::zeros(n_iterations,init_theta.n_elem);
+  arma::mat theta_mean_trace = arma::zeros(n_iterations,init_theta.n_elem);
   
   double acceptance_rate = 0.0;
   double scaling_sd = 1.0;
@@ -277,9 +292,18 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
     theta_mean = theta_mean + residual/i;
     
     sigma_empirical.slice(i-1) = covmat_empirical;
+    
+    //extra output for debugging
+    acceptance_trace(i-1) = acceptance_rate;
+    scaling_sd_trace(i-1) = scaling_sd;
+    target_theta_current_trace(i-1) = target_theta_current;
+    covmat_proposal_trace.slice(i-1) = covmat_proposal;
+    residual_trace.row(i-1) = residual.t();
+    theta_mean_trace.row(i-1) = theta_mean.t();
   }
   
-  return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
+  // return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
+  return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate,Named("acceptance_trace")=acceptance_trace,Named("target_theta_current_trace")=target_theta_current_trace,Named("covmat_proposal_trace")=covmat_proposal_trace,Named("residual_trace")=residual_trace,Named("theta_mean_trace")=theta_mean_trace,Named("scaling_sd_trace")=scaling_sd_trace));
 }
 
 /***R
@@ -288,8 +312,10 @@ p.log <- function(x) {
   -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
 }
 
-bananaAdapt <- adaptMCMC_simple(target=p.log,init_theta=c(5,-5),covmat=diag(c(1,1)),n_iterations=1e4,
-                         adapt_size_start=1e3,adapt_shape_start=5e3,info=1e2)
+set.seed(123)
+bananaAdapt <- adaptMCMC_simple(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),
+                                n_iterations=1e3,
+                         adapt_size_start=10,adapt_shape_start=20,info=1)
   
   par(mfrow=c(1,2))
   
@@ -303,5 +329,25 @@ bananaAdapt <- adaptMCMC_simple(target=p.log,init_theta=c(5,-5),covmat=diag(c(1,
   matplot(bananaAdapt$theta_trace,type="l")
   
   par(mfrow=c(1,1))
+  
+  
+#comparison code
+  as.vector(bananaAdapt$scaling_sd_trace)
+  banana_out$scaling.sd.trace
+  
+  bananaAdapt$residual_trace
+  banana_out$residual.trace
+  
+  bananaAdapt$theta_mean_trace
+  banana_out$theta.mean.trace
+  
+  bananaAdapt$covmat_proposal_trace
+  banana_out$covmat.proposal.trace
+  
+  set.seed(453)
+  replicate(10,as.vector(mvrnorm_samp(mu=c(5,5),sigma=diag(c(5,5)))))
+  set.seed(453)
+  rmvnorm(n=1,mean=c(5,5),sigma=diag(c(5,5)))
 */
+  
   

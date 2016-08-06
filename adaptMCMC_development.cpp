@@ -6,11 +6,10 @@ using namespace Rcpp;
 // Sampling from multivariate Gaussian
 // [[Rcpp::export]]
 arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
-  arma::vec Y = arma::randn(sigma.n_cols);
-  arma::rowvec out = arma::trans(mu + Y) * arma::chol(sigma);
+  arma::rowvec Y = rnorm(sigma.n_cols,0,1);
+  arma::rowvec out = mu.t() + Y * arma::chol(sigma);
   return(out.t());
 }
-
 
 // Function to update empirical covariance matrix
 // [[Rcpp::export]]
@@ -183,3 +182,27 @@ List adapt_mcmc(Function target, arma::vec theta_init, arma::mat sigma, double c
 }
 
 
+/***R
+p.log <- function(x) {
+  B <- 0.03 # controls 'bananacity'
+  -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
+}
+
+set.seed(123)
+bananaAdapt <- adapt_mcmc(target=p.log,theta_init=c(10,10),sigma=diag(c(1,1)),cooling=0.99,iterations=1e3,
+                          adapt_size=10,adapt_shape=20,
+                          info=1)
+
+par(mfrow=c(1,2))
+
+x1 <- seq(-15, 15, length=100)
+x2 <- seq(-15, 15, length=100)
+d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
+image(x1, x2, exp(d.banana), col=cm.colors(60))
+contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
+lines(bananaAdapt$theta_trace, type='l')
+
+matplot(bananaAdapt$theta_trace,type="l")
+
+par(mfrow=c(1,1))
+*/

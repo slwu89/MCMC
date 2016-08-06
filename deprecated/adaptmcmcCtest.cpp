@@ -3,6 +3,27 @@
 using namespace Rcpp;
 
 
+/*
+ * The function adaptMCMC is an adaptive Metropolis algorithm (probability.ca/jeff/ftpdir/adaptex.pdf)
+ * It does not do adaptive rejection yet, but usually adapting the covariance matrix of proposal distribution
+ * tends to give better results than simply adjusting rejection.
+ * See https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Covariance for how the covariance matrix is estimated
+ * 
+ * You will need to install Rcpp and RcppArmadillo packages and have a working C++ compiler to use it
+ * 
+ * The function takes the following arguments:
+ * target: this is a R function that must return the log likelihood of the target distribution we want to sample from (ie; log(likelihood) + log(prior))
+ * init_theta: a vector of initial parameter values (starting point of chain)
+ * covmat: covariance matrix of the proposal distribution (it is ok to just use identity matrix, because it will be adapted from data anyway)
+ * n_iterations: integer value, how long to run the chain
+ * adapt_size_start: number of accepted jumps after which to begin adapting size of proposal covariance matrix
+ * adapt_shape_start: number of accepted jumps after which to begin adpating shape of proposal covariance matrix (should set higher than adapt_size_start by 1.5X or 2X at least)
+ * info: print information on chain every X iterations
+ * adapt_size_cooling: cooling value for scaling size of covariance matrix (default is 0.99, must set between 0 and 1; usually dont need to change)
+ * 
+ * note: if you set adapt_size_start and adapt_shape_start to 0, it will run normal random walk MCMC without adaptive routine
+ */
+
 // MCMC utility functions
 // [[Rcpp::export]]
 arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
@@ -44,7 +65,13 @@ double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
 }
 
 
-// Random Walk MCMC with Adaptive Proposal Kernel
+/*
+ * Random Walk MCMC with Adaptive Proposal Kernel
+ * adaptMCMC returns an R list:
+ * theta_trace a matrix recording the trace of the sampled parameters
+ * sigma_empirical is an array recording the trace of the estimated covariance matrix of the target
+ * acceptance_rate is a numeric that is the acceptance rate at the end of the MCMC run
+ */
 // [[Rcpp::export]]
 List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, int info, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
   
@@ -72,7 +99,7 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
   arma::vec theta_mean = theta_current;
   
   //main mcmc loop
-  for(int i=1; i<iterations; i++){  //REMEMBER TO SUBSET BY i-1 !!!!!!!!!!!!!!!
+  for(int i=1; i<=iterations; i++){  //REMEMBER TO SUBSET BY i-1 !!!!!!!!!!!!!!!
     
     //adaptive routine
     if(adapt_size_start != 0 && i >= adapt_size_start && (adapt_shape_start == 0 || acceptance_rate*i < adapt_shape_start)){
@@ -148,7 +175,7 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
         if(acceptance_window == 0){
          acceptance_rate = acceptance_rate + (is_accepted - acceptance_rate) / i;
         } else {
-          arma::vec is_accepted_vec; //might need to declare in function scope? if so define in initialization section for faster computation
+          arma::vec is_accepted_vec(1);
           is_accepted_vec(0) = is_accepted;
           acceptance_series = arma::join_cols<arma::mat>(is_accepted_vec,acceptance_series);
           if(acceptance_series.n_elem > acceptance_window){
@@ -176,30 +203,104 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
   
   
 /***R
-# p.log <- function(x) {
-#   B <- 0.03 # controls 'bananacity'
-#   -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
+memory.limit(size=540000)
+
+p.log <- function(x) {
+  B <- 0.03 # controls 'bananacity'
+  -x[1]^2/200 - 1/2*(x[2]+B*x[1]^2-100*B)^2
+}
+
+set.seed(123)
+mcmc1 <- adaptMCMC(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),iterations=1e3,
+                         adapt_size_start=10,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=20,
+                         info=1e2)
+
+par(mfrow=c(1,2))
+
+x1 <- seq(-15, 15, length=100)
+x2 <- seq(-15, 15, length=100)
+d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
+image(x1, x2, exp(d.banana), col=cm.colors(60))
+contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
+lines(mcmc1$theta_trace, type='l')
+
+matplot(mcmc1$theta_trace,type="l")
+
+par(mfrow=c(1,1))
+
+
+#############################################
+####plot the empirical estimation of sigma###
+#############################################
+
+# load packages
+# library(foreach)
+# library(doSNOW)
+# library(parallel)
+
+#estimate kernel denstiy of empirical sigma
+# cl <- makeCluster(spec=detectCores()-2)
+# registerDoSNOW(cl)
+# sigma_kdens <- foreach(i=1:nrow(mcmc1$theta_trace),.packages=c("MASS"),.verbose=TRUE) %dopar% {
+#  if(sum(mcmc1$sigma_trace[,,i])==0){
+#    return(NULL)
+#  }
+#  reps <- mvrnorm(1e4,mu=mcmc1$theta_trace[i,],Sigma=mcmc1$sigma_trace[,,i])
+#  dd <- kde2d(reps[,1],reps[,2],n=200)
+#  return(dd)
 # }
 # 
-# bananaAdapt <- adaptMCMC(target=p.log,init_theta=c(5,-5),covmat=diag(c(1,1)),iterations=1e4,
-#                          adapt_size_start=1e3,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=0,
-#                          info=1e2)
+# stopCluster(cl)
+# rm(cl)
+
+# sigma_kdens <- sigma_kdens[!sapply(sigma_kdens,is.null)]
+
+#generate plots
+# bounds <- sapply(sigma_kdens,function(x){
+#  minX=min(x$x);
+#  maxX=max(x$x);
+#  minY=min(x$y);
+#  maxY=max(x$y);
+#  return(c(minX,maxX,minY,maxY))
+# })
 # 
-# par(mfrow=c(1,2))
+# minX <- min(t(bounds)[,1])
+# maxX <- max(t(bounds)[,2])
+# minY <- min(t(bounds)[,3])
+# maxY <- max(t(bounds)[,4])
+
+#need to figure out how to "fill in" the rest of the plotting area with red
+# for(i in 1:length(sigma_kdens)){
+#   image(sigma_kdens[[i]],xlim=c(minX,maxX),ylim=c(minY,maxY),useRaster=T)
+#   contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
+# }
+
+# file_root <- "C:/Users/Administrator/Dropbox/GitHub/MCMC/graphics/"
 # 
-# x1 <- seq(-15, 15, length=100)
-# x2 <- seq(-15, 15, length=100)
-# d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
-# image(x1, x2, exp(d.banana), col=cm.colors(60))
-# contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
-# lines(bananaAdapt$theta_trace, type='l')
-# 
-# matplot(bananaAdapt$theta_trace,type="l")
-# 
-# par(mfrow=c(1,1))
+# for(i in 1:length(sigma_kdens)){
+#  file_path <- file.path(paste0(file_root,"sigma_plot",i,".jpg"))
+#  jpeg(file_path,quality=100,width=640,height=640)
+#  image(sigma_kdens[[i]],useRaster=T)
+#  contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
+#  dev.off()
+# }
+ 
+# ggplot(data=melt(sigma_kdens[[1]]$z),aes(x=Var1,y=Var2,fill=value)) +
+#   geom_raster() +
+#   geom_contour(aes(z=value)) +
+#   guides(fill=FALSE) +
+#   theme_bw()
 */
   
-//write simple adaptive routines later from john's email last year
+  
+  
+/*
+ * Simple Random Walk MCMC with Adaptive Proposal Kernel 
+ * adaptMCMC returns an R list:
+ * theta_trace a matrix recording the trace of the sampled parameters
+ * sigma_empirical is an array recording the trace of the estimated covariance matrix of the target
+ * acceptance_rate is a numeric that is the acceptance rate at the end of the MCMC run
+ */
 //[[Rcpp::export]]
 List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, int adapt_shape_start, int info, double adapt_size_cooling = 0.99){
   
@@ -313,7 +414,7 @@ p.log <- function(x) {
 }
 
 set.seed(123)
-bananaAdapt <- adaptMCMC_simple(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),
+mcmc2 <- adaptMCMC_simple(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),
                                 n_iterations=1e3,
                          adapt_size_start=10,adapt_shape_start=20,info=1)
   
@@ -324,30 +425,12 @@ bananaAdapt <- adaptMCMC_simple(target=p.log,init_theta=c(10,10),covmat=diag(c(1
   d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
   image(x1, x2, exp(d.banana), col=cm.colors(60))
   contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
-  lines(bananaAdapt$theta_trace, type='l')
+  lines(mcmc2$theta_trace, type='l')
   
-  matplot(bananaAdapt$theta_trace,type="l")
+  matplot(mcmc2$theta_trace,type="l")
   
   par(mfrow=c(1,1))
   
-  
-#comparison code
-  as.vector(bananaAdapt$scaling_sd_trace)
-  banana_out$scaling.sd.trace
-  
-  bananaAdapt$residual_trace
-  banana_out$residual.trace
-  
-  bananaAdapt$theta_mean_trace
-  banana_out$theta.mean.trace
-  
-  bananaAdapt$covmat_proposal_trace
-  banana_out$covmat.proposal.trace
-  
-  set.seed(453)
-  replicate(10,as.vector(mvrnorm_samp(mu=c(5,5),sigma=diag(c(5,5)))))
-  set.seed(453)
-  rmvnorm(n=1,mean=c(5,5),sigma=diag(c(5,5)))
 */
   
   

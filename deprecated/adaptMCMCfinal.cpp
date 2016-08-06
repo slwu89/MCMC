@@ -77,7 +77,7 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
   
   double target_theta_current = as<double>(wrap(target(theta_current)));
 
-    arma::mat theta_trace = arma::zeros(n_iterations,init_theta.n_elem);
+  arma::mat theta_trace = arma::zeros(n_iterations,init_theta.n_elem);
   arma::cube sigma_empirical = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
 
   double acceptance_rate = 0.0;
@@ -178,7 +178,7 @@ par(mfrow=c(1,1))
 
 #example of adaptive MCMC in 2 dimensions
 set.seed(123)
-rw_output <- adaptMCMC(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),
+adapt_output <- adaptMCMC(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),
                        n_iterations=1e3,
                        adapt_size_start=20,adapt_shape_start=50,info=1)
 
@@ -189,9 +189,9 @@ x2 <- seq(-15, 15, length=100)
 d.banana <- matrix(apply(expand.grid(x1, x2), 1, p.log), nrow=100)
 image(x1, x2, exp(d.banana), col=cm.colors(60))
 contour(x1, x2, exp(d.banana), add=TRUE, col=gray(0.6))
-lines(rw_output$theta_trace, type='l')
+lines(adapt_output$theta_trace, type='l')
 
-matplot(rw_output$theta_trace,type="l")
+matplot(adapt_output$theta_trace,type="l")
 
 par(mfrow=c(1,1))
 */

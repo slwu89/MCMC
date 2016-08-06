@@ -18,7 +18,7 @@ using namespace Rcpp;
 * n_iterations: integer value, how long to run the chain
 * adapt_size_start: number of accepted jumps after which to begin adapting size of proposal covariance matrix
 * adapt_shape_start: number of accepted jumps after which to begin adpating shape of proposal covariance matrix (should set higher than adapt_size_start by 1.5X or 2X at least)
-* info: print information on chain every X iterations
+* info: print information on chain every X n_iterations
 * adapt_size_cooling: cooling value for scaling size of covariance matrix (default is 0.99, must set between 0 and 1; usually dont need to change)
 * 
 * note: if you set adapt_size_start and adapt_shape_start to 0, it will run normal random walk MCMC without adaptive routine
@@ -73,7 +73,7 @@ double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
 * acceptance_rate is a numeric that is the acceptance rate at the end of the MCMC run
 */
 // [[Rcpp::export]]
-List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, int info, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
+List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, int info, bool verbose, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
   
   arma::vec theta_current = init_theta;
   arma:: vec theta_propose = init_theta;
@@ -83,8 +83,8 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
   bool adapting_size = false;
   bool adapting_shape = false;
   
-  arma::mat theta_trace = arma::zeros(iterations,init_theta.n_elem);
-  arma::cube sigma_trace = arma::zeros(covmat.n_rows,covmat.n_cols,iterations);
+  arma::mat theta_trace = arma::zeros(n_iterations,init_theta.n_elem);
+  arma::cube sigma_empirical = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
   
   //evaluate target distribution at theta_init
   double target_theta_current; //evaluate target at current theta
@@ -98,8 +98,25 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
   arma::mat covmat_empirical = arma::zeros(covmat.n_rows,covmat.n_cols);
   arma::vec theta_mean = theta_current;
   
+  //prepare extra data for verbose output
+  arma::vec acceptance_trace;
+  arma::vec target_theta_current_trace;
+  arma::vec scaling_sd_trace;
+  arma::cube covmat_proposal_trace;
+  arma::mat residual_trace;
+  arma::mat theta_mean_trace;
+  
+  if(verbose){
+    acceptance_trace = arma::zeros(n_iterations);
+    target_theta_current_trace = arma::zeros(n_iterations);
+    scaling_sd_trace = arma::zeros(n_iterations);
+    covmat_proposal_trace = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
+    residual_trace = arma::zeros(n_iterations,init_theta.n_elem);
+    theta_mean_trace = arma::zeros(n_iterations,init_theta.n_elem);
+  }
+  
   //main mcmc loop
-  for(int i=1; i<=iterations; i++){
+  for(int i=1; i<=n_iterations; i++){
     
     //adaptive routine
     if(adapt_size_start != 0 && i >= adapt_size_start && (adapt_shape_start == 0 || acceptance_rate*i < adapt_shape_start)){
@@ -194,11 +211,24 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int iter
     covmat_empirical = update_sigma(covmat_empirical,residual,i);
     theta_mean = theta_mean + residual/i;
     
-    sigma_trace.slice(i-1) = covmat_empirical;
+    sigma_empirical.slice(i-1) = covmat_empirical;
+    
+    if(verbose){
+      acceptance_trace(i-1) = acceptance_rate;
+      scaling_sd_trace(i-1) = scaling_sd;
+      target_theta_current_trace(i-1) = target_theta_current;
+      covmat_proposal_trace.slice(i-1) = covmat_proposal;
+      residual_trace.row(i-1) = residual.t();
+      theta_mean_trace.row(i-1) = theta_mean.t();
+    }
     
   }
   
-  return(List::create(Named("theta_trace")=theta_trace,Named("sigma_trace")=sigma_trace,Named("acceptance_rate")=acceptance_rate));
+  if(verbose){
+    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate,Named("acceptance_trace")=acceptance_trace,Named("target_theta_current_trace")=target_theta_current_trace,Named("covmat_proposal_trace")=covmat_proposal_trace,Named("residual_trace")=residual_trace,Named("theta_mean_trace")=theta_mean_trace,Named("scaling_sd_trace")=scaling_sd_trace));
+  } else {
+    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
+  }
 }
 
 
@@ -307,7 +337,7 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
     
     sigma_empirical.slice(i-1) = covmat_empirical;
     
-    //extra output for debugging
+    //verbose output
     if(verbose){
       acceptance_trace(i-1) = acceptance_rate;
       scaling_sd_trace(i-1) = scaling_sd;

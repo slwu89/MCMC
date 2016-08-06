@@ -17,9 +17,9 @@ p.log <- function(x) {
 
 #plot output from complex sampler
 set.seed(123)
-banana1 <- adaptMCMC(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),iterations=1e3,
+banana1 <- adaptMCMC(target=p.log,init_theta=c(10,10),covmat=diag(c(1,1)),n_iterations=1e3,
                    adapt_size_start=10,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=20,
-                   info=1e2)
+                   verbose=FALSE,info=1e2)
 
 par(mfrow=c(1,2))
 
@@ -55,63 +55,81 @@ par(mfrow=c(1,1))
 ####plot the empirical estimation of sigma###
 #############################################
 
-# load packages
-# library(foreach)
-# library(doSNOW)
-# library(parallel)
+#load packages
+library(foreach)
+library(doSNOW)
+library(parallel)
+library(ggplot2)
+library(reshape2)
+library(gganimate)
 
 #estimate kernel denstiy of empirical sigma
-# cl <- makeCluster(spec=detectCores()-2)
-# registerDoSNOW(cl)
-# sigma_kdens <- foreach(i=1:nrow(mcmc1$theta_trace),.packages=c("MASS"),.verbose=TRUE) %dopar% {
-#  if(sum(mcmc1$sigma_trace[,,i])==0){
-#    return(NULL)
-#  }
-#  reps <- mvrnorm(1e4,mu=mcmc1$theta_trace[i,],Sigma=mcmc1$sigma_trace[,,i])
-#  dd <- kde2d(reps[,1],reps[,2],n=200)
-#  return(dd)
-# }
-# 
-# stopCluster(cl)
-# rm(cl)
+cl <- makeCluster(spec=detectCores()-2)
+registerDoSNOW(cl)
+sigma_kdens <- foreach(i=1:nrow(banana1$theta_trace),.packages=c("MASS"),.verbose=TRUE) %dopar% {
+ if(sum(banana1$sigma_empirical[,,i])==0){
+   return(NULL)
+ }
+ reps <- mvrnorm(1e4,mu=banana1$theta_trace[i,],Sigma=banana1$sigma_empirical[,,i])
+ dd <- kde2d(reps[,1],reps[,2],n=200)
+ return(dd)
+}
 
-# sigma_kdens <- sigma_kdens[!sapply(sigma_kdens,is.null)]
+stopCluster(cl)
+rm(cl)
 
-#generate plots
-# bounds <- sapply(sigma_kdens,function(x){
-#  minX=min(x$x);
-#  maxX=max(x$x);
-#  minY=min(x$y);
-#  maxY=max(x$y);
-#  return(c(minX,maxX,minY,maxY))
-# })
-# 
-# minX <- min(t(bounds)[,1])
-# maxX <- max(t(bounds)[,2])
-# minY <- min(t(bounds)[,3])
-# maxY <- max(t(bounds)[,4])
+sigma_kdens <- sigma_kdens[!sapply(sigma_kdens,is.null)]
 
-#need to figure out how to "fill in" the rest of the plotting area with red
-# for(i in 1:length(sigma_kdens)){
-#   image(sigma_kdens[[i]],xlim=c(minX,maxX),ylim=c(minY,maxY),useRaster=T)
-#   contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
-# }
+#return melted data
+get_animationData <- function(sigmaDat){
+  
+  cl <- makeCluster(spec=detectCores()-2)
+  registerDoSNOW(cl)
+  
+  out <- foreach(i=1:length(sigmaDat),.packages=c("reshape2"),.verbose=TRUE,.combine="rbind") %dopar% {
+    dat_i <- melt(sigmaDat[[i]]$z)
+    dat_i$iter <- i
+    return(dat_i)
+  }
+  
+  stopCluster(cl)
+  rm(cl)
+  
+  return(out)
+}
 
-# file_root <- "C:/Users/Administrator/Dropbox/GitHub/MCMC/graphics/"
-# 
-# for(i in 1:length(sigma_kdens)){
-#  file_path <- file.path(paste0(file_root,"sigma_plot",i,".jpg"))
-#  jpeg(file_path,quality=100,width=640,height=640)
-#  image(sigma_kdens[[i]],useRaster=T)
-#  contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
-#  dev.off()
-# }
+###GGanimate Version###
 
-# ggplot(data=melt(sigma_kdens[[1]]$z),aes(x=Var1,y=Var2,fill=value)) +
-#   geom_raster() +
-#   geom_contour(aes(z=value)) +
-#   guides(fill=FALSE) +
-#   theme_bw()
+sigma_aniDat <- get_animationData(sigma_kdens[10:15])
+
+ggplot(data=sigma_aniDat[sigma_aniDat$iter==1,],aes(x=Var1,y=Var2,z=value,fill=value)) +
+  geom_raster() +
+  geom_contour() +
+  guides(fill=FALSE) +
+  theme_bw() +
+  theme(axis.text=element_blank(),axis.ticks=element_blank(),panel.background=element_blank(),panel.grid.minor=element_blank(),panel.grid.major=element_blank(),axis.title=element_blank(),title=element_blank(),panel.border=element_blank())
+
+sigma_ggAni <- ggplot(data=sigma_aniDat,aes(x=Var1,y=Var2,z=value,fill=value,frame=iter)) +
+  geom_raster() +
+  geom_contour() +
+  guides(fill=FALSE) +
+  theme_bw() +
+  theme(axis.text=element_blank(),axis.ticks=element_blank(),panel.background=element_blank(),panel.grid.minor=element_blank(),panel.grid.major=element_blank(),axis.title=element_blank(),title=element_blank(),panel.border=element_blank())
+
+gg_animate(sigma_ggAni)
+
+###Base plotting with Animation package###
+
+library(animation)
+
+makeplot <- function(){
+  for(i in 1:500){
+    image(sigma_kdens[[i]],useRaster=T,xaxt="n",yaxt="n",ann=FALSE)
+    contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
+  }
+}
+
+saveGIF(makeplot(),interval=0.2,width=640,height=640)
 
 
 ################################

@@ -152,9 +152,9 @@ goldpr <- function(xx){
   return(-log(y))
 }
 
-goldpr1 <- adaptMCMC(target=goldpr,init_theta=c(1,1),covmat=diag(c(1,1)),iterations=1e3,
+goldpr1 <- adaptMCMC(target=goldpr,init_theta=c(1,1),covmat=diag(c(1,1)),n_iterations=1e3,
              adapt_size_start=10,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=20,
-             info=1e2)
+             verbose=FALSE,info=1e2)
 
 par(mfrow=c(1,2))
 

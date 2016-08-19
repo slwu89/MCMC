@@ -34,11 +34,6 @@ NumericMatrix random_walk2d(int n){
   return(out);
 }
 
-/*** R
-random_walker2d <- random_walk2d(5e4)
-plot(random_walker2d,type="l",col="blue")
-*/
-
 
 // 3D random walker
 // [[Rcpp::export]]
@@ -79,12 +74,6 @@ NumericMatrix random_walk3d(int n){
   return(out);
 }
 
-/*** R
-library(scatterplot3d)
-random_walker3d <- random_walk3d(5e4)
-scatterplot3d(random_walker3d,type="l",color="blue")
-*/
-
 
 // Random walker on graph
 // [[Rcpp::export]]
@@ -109,13 +98,3 @@ NumericVector random_walkGraph(NumericMatrix graph, int init_pos, int n){
   }
   return(out);
 }
-
-/***R
-markov_graph <- matrix(data=0,nrow=100,ncol=100)
-for(i in 1:nrow(markov_graph)){
-  transitions <- runif(ncol(markov_graph))
-  markov_graph[i,] <- transitions/sum(transitions)
-}
-graph_walker <- random_walkGraph(graph=markov_graph,init_pos=1,n=500)
-graph_walker <- graph_walker + 1
-*/

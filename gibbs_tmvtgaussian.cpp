@@ -1,11 +1,11 @@
-#include <Rcpp.h>
+#include <RcppArmadillo.h>
+// [[Rcpp::depends(RcppArmadillo)]]
 using namespace Rcpp;
 
 /*
  * This file contains code relevant to a C++ implementation of a Gibbs sampler (a specific case of Metropolis-Hastings MCMC) to
  * sample from a truncated multivariate Gaussian distribution.
  */
-
 
 
 // r8poly_value_horner evaluates a polynomial using Horner's method
@@ -27,7 +27,11 @@ double r8poly_value_horner(int m, double c[], double x){
  * this function replicates the functionality of pnorm from base R
  */
 // [[Rcpp::export]]
-double CDF_norm(double x){
+double CDF_norm(double x_input, double mu, double sigma){
+  
+  //map input to N(0,1)
+  double x = (x_input - mu) / sigma;
+  
   double a1 = 0.398942280444;
   double a2 = 0.399903438504;
   double a3 = 5.75885480458;
@@ -77,7 +81,18 @@ double CDF_norm(double x){
  * this function replicates the functionality of qnorm from base R
  */
 // [[Rcpp::export]]
-double invCDF_norm(double p){
+double invCDF_norm(double p, double mu, double sigma){
+  
+  double out;
+  
+  //map input to N(0,1)
+  if(p < 0.0 || 1.0 < p){
+    Rcout << "\n" << std::endl;
+    Rcout << "NORMAL_MS_CDF_INV - Fatal error!\n" << std::endl;
+    Rcout << "  CDF < 0 or 1 < CDF.\n" << std::endl;
+    return(0.0);
+  }
+  
   double a[8] = {
     3.3871328727963666080,     1.3314166789178437745E+2,
     1.9715909503065514427E+3,  1.3731693765509461125E+4,
@@ -154,5 +169,40 @@ double invCDF_norm(double p){
     }
   }
   
-  return value;
+  out = mu + sigma * value;
+  return(out);
+}
+
+
+/*
+ * 
+ */
+NumericVector rtnorm_gibbs(int n, double mu, double sigma, double a = -std::numeric_limits<double>::infinity(), double b = std::numeric_limits<double>::infinity()){
+  
+  //sample from uniform distribution on unit interval
+  NumericVector F = runif(n);
+  
+  //Phi(a) and Phi(b)
+  double Fa = CDF_norm(a)
+}
+
+
+
+
+rtnorm.gibbs <- function(n, mu=0, sigma=1, a=-Inf, b=Inf)
+{
+# Draw from Uni(0,1)
+  F <- runif(n) 	
+  
+#Phi(a) und Phi(b)
+  Fa <- pnorm(a, mu, sd=sigma)
+    Fb <- pnorm(b, mu, sd=sigma)
+    
+# Truncated Normal Distribution, see equation (6), but F(x) ~ Uni(0,1), 
+# so we directly draw from Uni(0,1) instead of doing:
+# x <- rnorm(n, mu, sigma)
+# y <-  mu + sigma * qnorm(pnorm(x)*(Fb - Fa) + Fa)
+    y  <-  mu + sigma * qnorm(F * (Fb - Fa) + Fa)	
+      
+      y
 }

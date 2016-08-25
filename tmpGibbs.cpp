@@ -147,7 +147,7 @@ arma::mat rtmvnorm_gibbs(int n, arma::vec mu, arma::mat sigma, arma::vec lower, 
 
 /***R
 set.seed(123)
-rtmvnorm_gibbs(10,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),c(2,2,50,50))
+system.time(tmp <- rtmvnorm_gibbs(1e4,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),c(2,2,50,50)))
 set.seed(123)
-tmvtnorm:::rtmvnorm.gibbs(10,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),start.value = c(2,2,50,50))
+system.time(tmp1 <- tmvtnorm:::rtmvnorm.gibbs(1e4,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),start.value = c(2,2,50,50)))
 */

@@ -425,4 +425,109 @@ rand <- rand/sum(rand)
 cpp_sample(vector,rand)
 */
 
+/*
+ * testing filling a vector based on inputs that may or may not include infinite values
+ */
+// [[Rcpp::export]]
+NumericVector gibbs_fill(NumericVector mu, NumericVector lower, NumericVector upper, Rcpp::Nullable<Rcpp::NumericVector> init_state = R_NilValue){
+  NumericVector x0;
+  if(init_state.isNull()){
+    for(int i=0; i < mu.length(); i++){
+      double x0_i;
+      if(isfinite(lower[i])){
+        x0_i = lower[i];
+      } else if(isfinite(upper[i])){
+        x0_i = upper[i];
+      } else {
+        x0_i = 0.0;
+      }
+      x0.push_back(x0_i);
+    }
+  } else {
+    x0 = init_state;
+  }
+  return(x0);
+}
+
+/***R
+gibbs_fill(1:5,c(0,4,2,-Inf,4),c(Inf,Inf,10,11,12))
+  gibbs_fill(1:5,c(0,4,2,-Inf,4),c(Inf,Inf,10,11,12),c(5,6,5,1,5))
+  */
+
+//3D array with default Rcpp data structures
+// [[Rcpp::export]]
+NumericVector create_array(int a, int b, int c){
+  Dimension dim(a,b,c);
+  NumericVector out(dim,0.0);
+  return(out);
+}
+/***R
+message("Running create_array")
+  create_array(2,3,5)
+  */
+
+
+//check if sigma partitioning works same as R
+// [[Rcpp::export]]
+arma::mat sub1(arma::mat x, int e) {
+  x.shed_col(e);
+  x.shed_row(e);
+  return x;
+}
+
+// [[Rcpp::export]]
+arma::mat sub2(arma::mat x, int a, int b){
+  x.shed_col(b);
+  return(x.row(a));
+}
+
+// [[Rcpp::export]]
+List partition_sigma(arma::mat sigma){
+  
+  int d = sigma.n_cols; //check dimension of target distribution
+  
+  //calculate conditional standard deviations
+  arma::vec sd(d);
+  arma::cube P = arma::zeros(1,d-1,d);
+  
+  for(int i=0; i<d; i++){
+    //partitioning of sigma
+    Rcout << "on iteration i: " << i << std::endl;
+    arma::mat Sigma = sub1(sigma,i);
+    Rcout << "Sigma: "  << Sigma << std::endl;
+    double sigma_ii = sigma(i,i);
+    Rcout << "sigma_ii: " << sigma_ii << std::endl;
+    arma::rowvec Sigma_i = sub2(sigma,i,i);
+    Rcout << "Sigma_i: " << Sigma_i << std::endl;
+    
+    P.slice(i) = Sigma_i * Sigma.i();
+    Rcout << "calcuated P.slice(i): " << P.slice(i) << std::endl;
+    double p_i = Rcpp::as<double>(wrap(P.slice(i) * Sigma_i.t()));
+    Rcout << "calculated p_i: " << p_i << std::endl;
+    sd(i) = sqrt(sigma_ii - p_i);
+    Rcout << "calculated sd(i): " << sd(i) << std::endl;
+  }
+  
+  return(List::create(Named("P")=P,Named("sd")=sd));
+}
+
+/***R
+sigma <- diag(1:4)
+  d <- ncol(sigma)
+  sd <- list(d)
+  P  <- list(d)
+  for(i in 1:d)
+  {
+# Partitioning of Sigma
+    Sigma    <- sigma[-i,-i] # (d-1) x (d-1)
+    sigma_ii <- sigma[i,i]   # 1 x 1
+    Sigma_i  <- sigma[i,-i]  # 1 x (d-1)
+    
+    P[[i]]   <- t(Sigma_i) %*% solve(Sigma)  # (1 x (d-1)) * ((d-1) x (d-1)) =  (1 x (d-1))
+    sd[[i]]  <- sqrt(sigma_ii - P[[i]] %*% Sigma_i)  # (1 x (d-1)) * ((d-1) x 1)
+  }
+  P
+    sd
+    partition_sigma(sigma)
+    */
 

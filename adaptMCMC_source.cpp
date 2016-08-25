@@ -1,5 +1,7 @@
 #include <RcppArmadillo.h>
 // [[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::depends(RcppProgress)]]
+#include <progress.hpp>
 using namespace Rcpp;
 
 
@@ -19,6 +21,7 @@ using namespace Rcpp;
 * adapt_size_start: number of accepted jumps after which to begin adapting size of proposal covariance matrix
 * adapt_shape_start: number of accepted jumps after which to begin adpating shape of proposal covariance matrix (should set higher than adapt_size_start by 1.5X or 2X at least)
 * info: print information on chain every X n_iterations
+* verbose: provide verbose output, this is useful for visualizing adaptive routine
 * adapt_size_cooling: cooling value for scaling size of covariance matrix (default is 0.99, must set between 0 and 1; usually dont need to change)
 * 
 * note: if you set adapt_size_start and adapt_shape_start to 0, it will run normal random walk MCMC without adaptive routine
@@ -75,6 +78,8 @@ double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
 // [[Rcpp::export]]
 List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, int info, bool verbose, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
   
+  Progress p(0, false); //progress to check for user interrupt
+  
   arma::vec theta_current = init_theta;
   arma:: vec theta_propose = init_theta;
   arma::mat covmat_proposal = covmat;
@@ -117,6 +122,12 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
   
   //main mcmc loop
   for(int i=1; i<=n_iterations; i++){
+    
+    //check for user abort
+    if(Progress::check_abort()){
+      Rcout << "User abort detected at iter: " << i << std::endl;
+      return(List::create(Named("null")=R_NilValue));
+    }
     
     //adaptive routine
     if(adapt_size_start != 0 && i >= adapt_size_start && (adapt_shape_start == 0 || acceptance_rate*i < adapt_shape_start)){
@@ -242,6 +253,8 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
 //[[Rcpp::export]]
 List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, int adapt_shape_start, int info, bool verbose, double adapt_size_cooling = 0.99){
   
+  Progress p(0, false); //progress to check for user interrupt
+  
   arma::vec theta_current = init_theta;
   arma::vec theta_propose = init_theta;
   arma::mat covmat_proposal = covmat;
@@ -279,6 +292,12 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
   arma::vec theta_mean = theta_current;
   
   for(int i=1; i<=n_iterations; i++){
+    
+    //check for user abort
+    if(Progress::check_abort()){
+      Rcout << "User abort detected at iter: " << i << std::endl;
+      return(List::create(Named("null")=R_NilValue));
+    }
     
     //adaptive mcmc routine
     if(adapt_size_start != 0 && i >= adapt_size_start && acceptance_rate * i < adapt_shape_start){

@@ -648,3 +648,17 @@ void test_gibbs(){
   Rcout << gibbs << std::endl;
   
 }
+
+// testing how vectorized Armadillo is
+// [[Rcpp::export]]
+void test_ArmaVec(){
+  double rand = R::runif(0,1);
+  Rcout << "rand: " << rand << std::endl;
+  arma::vec vector(5);
+  vector.ones();
+  Rcout << "multiple rand by vector: " << vector * rand << std::endl;
+}
+/***R
+message("running test_ArmaVec")
+test_ArmaVec()
+*/

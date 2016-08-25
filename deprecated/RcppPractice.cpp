@@ -527,7 +527,94 @@ sigma <- diag(1:4)
     sd[[i]]  <- sqrt(sigma_ii - P[[i]] %*% Sigma_i)  # (1 x (d-1)) * ((d-1) x 1)
   }
   P
-    sd
-    partition_sigma(sigma)
-    */
+  sd
+partition_sigma(sigma)
+*/
+
+
+
+// testing calculation of conditional distributions and sample from all dimensions
+
+// [[Rcpp::export]]
+arma::vec negSubCol(arma::vec x, int i){
+  x.shed_row(i);
+  return(x);
+}
+
+// [[Rcpp::export]]
+arma::rowvec negSubRow(arma::rowvec x, int i){
+  x.shed_col(i);
+  return(x);
+}
+
+// [[Rcpp::export]]
+void testSTuff(arma::cube P,arma::vec x,arma::vec mean){
+  for(int i=0; i < P.n_slices; i++){
+    Rcout << "on iter: " << i << std::endl;
+    arma::rowvec slice_i = P.slice(i);
+    Rcout << "P.slice(i): " << slice_i << std::endl;
+    arma::vec slice_i_times;
+    slice_i_times = slice_i * (negSubCol(x,i) - negSubCol(x,i));
+    double slice_i_times_double;
+    slice_i_times_double = Rcpp::as<double>(wrap(slice_i_times));
+    Rcout << "slice_i_times_double: " << slice_i_times_double << std::endl;
+    Rcout << "mean(i) + other stuff: " << mean(i) + slice_i_times_double << std::endl;
+  }
+}
+  
+// [[Rcpp::export]]
+arma::vec testCond(int d, arma::vec mean, arma::cube P,arma::vec lower,arma::vec upper,arma::vec sd,arma::vec U){
+  arma::vec x(d);
+  int l = 0;
+  for(int i=0; i<d; i++){
+
+    arma::rowvec slice_i = P.slice(i);
+    arma::vec slice_i_times = slice_i * (negSubCol(x,i) - negSubCol(x,i));
+    double slice_i_times_double = Rcpp::as<double>(wrap(slice_i_times));
+    double mu_i = mean(i) + slice_i_times_double;
+    
+    //transformation
+    double Fa = R::pnorm(lower(i),mu_i,sd(i),1,0);
+    double Fb = R::pnorm(upper(i),mu_i,sd(i),1,0);
+    x(i) = mu_i + sd(i) * R::qnorm(U(l) * (Fb - Fa) + Fa,0.0,1.0,1,0);
+    l = l + 1;
+  }
+  return(x);
+}
+
+/***R
+message("running stuff to test conditional sampling from each dimension!!!!!!!")
+n = 50
+mean = 1:4
+sigma = diag(1:4)
+lower = c(-Inf,-Inf,0,0)
+upper = c(Inf,100,Inf,Inf)
+d <- ncol(sigma)
+U <- runif(10)
+x <- ifelse(is.finite(lower), lower, ifelse(is.finite(upper), upper, 0))
+tmp <- partition_sigma(sigma)
+P <- tmp$P
+sd <- as.list(tmp$sd)
+l <- 1
+
+for(i in 1:d)
+{
+  # Calculation of conditional expectation and conditional variance:
+  # Conditional variance does not depend on x [-i] from!
+  mu_i  <- mean[i]    + P[,,i] %*% (x[-i] - mean[-i])
+  
+  # Transformation
+  F.tmp <- pnorm(c(lower[i], upper[i]), mu_i, sd[[i]])
+  Fa    <- F.tmp[1]
+  Fb    <- F.tmp[2]
+  x[i]  <- mu_i + sd[[i]] * qnorm(U[l] * (Fb - Fa) + Fa)
+  l     <- l + 1
+}
+
+message("RUNNING testSTuff")
+sd_test <- as.vector(tmp$sd)
+testSTuff(P,x,mean)
+testCond(d,mean,P,lower,upper,sd_test,U)
+*/
+
 

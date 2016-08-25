@@ -22,6 +22,20 @@ arma::mat sub2(arma::mat x, int a, int b){
   return(x.row(a));
 }
 
+// negSubCol returns a column vector x[-i]
+// [[Rcpp::export]]
+arma::vec negSubCol(arma::vec x, int i){
+  x.shed_row(i);
+  return(x);
+}
+
+// negSubRow returns a row vector x[-i]
+// [[Rcpp::export]]
+arma::rowvec negSubRow(arma::rowvec x, int i){
+  x.shed_col(i);
+  return(x);
+}
+
 // r8poly_value_horner evaluates a polynomial using Horner's method
 // [[Rcpp::export]]
 double r8poly_value_horner(int m, double c[], double x){
@@ -239,46 +253,60 @@ test_gibbs()
 */
 
 
-/*
- * rtmvnorm_gibbs returns a sample of size n from the specified truncated multivariate Gaussian distribution
- * 
- */
-arma::mat rtmvnorm_gibbs(int n, arma::vec mu, arma::mat sigma, arma::vec lower, arma::vec upper, arma::vec init_state){
-  
-  int d = mu.n_elem; //check dimension of target distribution
-  arma::mat trace = arma::zeros(n,d); //trace of MCMC chain
-  
-  //draw from U(0,1)
-  NumericVector U = runif(n*d);
-  double l = 1.0;
-  
-  //calculate conditional standard deviations
-  arma::vec sd(d);
-  arma::cube P = arma::zeros(1,d-1,d);
-  
-  for(int i=0; i<d; i++){
-    //partitioning of sigma
-    arma::mat Sigma = sub1(sigma,i);
-    double sigma_ii = sigma(i,i);
-    arma::rowvec Sigma_i = sub2(sigma,i,i);
-
-    P.slice(i) = Sigma_i * Sigma.i();
-    double p_i = Rcpp::as<double>(wrap(P.slice(i) * Sigma_i.t()));
-    sd(i) = sqrt(sigma_ii - p_i);
-  }
-  
-  arma::vec x = init_state;
-  
-  //run Gibbs sampler for specified chain length (MCMC chain of n samples)
-  for(int j=0; j<n; j++){
-    
-    //sample all conditional distributions
-    for(int i=0; i<d; i++){
-      
-    }
-    
-  }
-  
-  return(trace);
-}
+// /*
+//  * rtmvnorm_gibbs returns a sample of size n from the specified truncated multivariate Gaussian distribution
+//  * 
+//  */
+// arma::mat rtmvnorm_gibbs(int n, arma::vec mu, arma::mat sigma, arma::vec lower, arma::vec upper, arma::vec init_state){
+//   
+//   int d = mu.n_elem; //check dimension of target distribution
+//   arma::mat trace = arma::zeros(n,d); //trace of MCMC chain
+//   
+//   //draw from U(0,1)
+//   NumericVector U = runif(n*d);
+//   int l = 0; //iterator for U
+//   
+//   //calculate conditional standard deviations
+//   arma::vec sd(d);
+//   arma::cube P = arma::zeros(1,d-1,d);
+//   
+//   for(int i=0; i<d; i++){
+//     //partitioning of sigma
+//     arma::mat Sigma = sub1(sigma,i);
+//     double sigma_ii = sigma(i,i);
+//     arma::rowvec Sigma_i = sub2(sigma,i,i);
+// 
+//     P.slice(i) = Sigma_i * Sigma.i();
+//     double p_i = Rcpp::as<double>(wrap(P.slice(i) * Sigma_i.t()));
+//     sd(i) = sqrt(sigma_ii - p_i);
+//   }
+//   
+//   arma::vec x = init_state;
+//   
+//   //run Gibbs sampler for specified chain length (MCMC chain of n samples)
+//   for(int j=0; j<n; j++){
+//     
+//     //sample all conditional distributions
+//     for(int i=0; i<d; i++){
+//       
+//       //calculation of conditional expectation and conditional variance
+//       arma::rowvec slice_i = P.slice(i);
+//       arma::vec slice_i_times = slice_i * (negSubCol(x,i) - negSubCol(x,i));
+//       double slice_i_times_double = Rcpp::as<double>(wrap(slice_i_times));
+//       double mu_i = mu(i) + slice_i_times_double;
+//       
+//       //transformation
+//       double Fa = CDF_norm(lower(i),mu_i,sd(i));
+//       double Fb = CDF_norm(upper(i),mu_i,sd(i));
+//       x(i) = mu_i + sd(i) * invCDF_norm(U(l) * (Fb - Fa) + Fa,mu=0.0,sigma=1.0);
+//       l = l + 1;
+//       
+//     }
+//     
+//     trace.row(j) = x.t();
+//     
+//   }
+//   
+//   return(trace);
+// }
 

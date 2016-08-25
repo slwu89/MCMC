@@ -69,27 +69,23 @@ NumericVector rtnorm_gibbs(int n, double mu, double sigma, double a, double b){
   return(out);
 }
 
-// [[Rcpp::export]]
-void test_gibbs(){
-  NumericVector gibbs = rtnorm_gibbs(5,0.0,1.0,-std::numeric_limits<double>::infinity(),std::numeric_limits<double>::infinity());
-  Rcout << gibbs << std::endl;
-  
-}
-
 /***R
 library(tmvtnorm)
-  set.seed(123)
-  tmvtnorm:::rtnorm.gibbs(n=10)
-  set.seed(123)
-  rtnorm_gibbs(10,0.0,1.0,-Inf,Inf)
-  set.seed(123)
-  test_gibbs()
-  */
+set.seed(123)
+tmvtnorm:::rtnorm.gibbs(n=10)
+set.seed(123)
+rtnorm_gibbs(10,0.0,1.0,-Inf,Inf)
+*/
 
 
 /*
  * rtmvnorm_gibbs returns a sample of size n from the specified truncated multivariate Gaussian distribution
- *
+ * n: integer number of samples to take
+ * mu: vector mean of distribution
+ * sigma: covariance matrix of target distribution
+ * lower: vector lower truncation bound
+ * upper: vector upper truncation bound
+ * init_state: initial starting state of the MCMC chain
  */
 // [[Rcpp::export]]
 arma::mat rtmvnorm_gibbs(int n, arma::vec mu, arma::mat sigma, arma::vec lower, arma::vec upper, arma::vec init_state){

@@ -120,6 +120,11 @@ gg_animate(sigma_ggAni)
 
 ###Base plotting with Animation package###
 
+max_x <- max(sapply(sigma_kdens,function(x){max(x$x)}))
+min_x <- min(sapply(sigma_kdens,function(x){min(x$x)}))
+max_y <- max(sapply(sigma_kdens,function(x){max(x$y)}))
+min_y <- min(sapply(sigma_kdens,function(x){min(x$y)}))
+
 library(animation)
 
 makeplot <- function(){
@@ -130,7 +135,23 @@ makeplot <- function(){
 }
 
 saveGIF(makeplot(),interval=0.2,width=640,height=640)
+sigma_col <- colorRampPalette(colors=c("#132B43","#56B1F7"))(50)
 
+
+
+
+
+makeplot <- function(){
+  for(i in 1:length(sigma_kdens)){
+    par(bg="#132B43")
+    plot(0,0,type="n",axes=FALSE,ann=FALSE,xlim=c(min_x,max_x),ylim=c(min_y,max_y))
+    image(sigma_kdens[[i]],useRaster=T,xaxt="n",yaxt="n",ann=FALSE,
+          col=sigma_col,xlim=c(min_x,max_x),ylim=c(min_y,max_y),add=TRUE)
+    contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,
+            add=T,lty=2,col="#9cbfe3",xlim=c(min_x,max_x),ylim=c(min_y,max_y))
+  }
+}
+saveGIF(makeplot(),interval=0.01,ani.width=1024,ani.height=1024)
 
 ################################
 ###Goldenstein-Price Function###

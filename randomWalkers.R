@@ -67,6 +67,7 @@ saveGIF(
         lines(current_i[(j+1):j,],col=color_block[j])
       }
     }
+    
   }
   ,movie.name="rw2d.gif",ani.height=640,ani.width=640,interval=0.1)
 

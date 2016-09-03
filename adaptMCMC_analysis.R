@@ -5,6 +5,12 @@
 
 Rcpp::sourceCpp('/Users/slwu89/Dropbox/GitHub/MCMC/adaptMCMC_source.cpp')
 
+#load packages
+library(foreach)
+library(doSNOW)
+library(parallel)
+library(animation)
+
 
 ##################################
 ###Rosenbrock (banana) Function###
@@ -55,13 +61,6 @@ par(mfrow=c(1,1))
 ####plot the empirical estimation of sigma###
 #############################################
 
-#load packages
-library(foreach)
-library(doSNOW)
-library(parallel)
-library(ggplot2)
-library(reshape2)
-library(gganimate)
 
 #estimate kernel denstiy of empirical sigma
 cl <- makeCluster(spec=detectCores()-2)
@@ -80,44 +79,6 @@ rm(cl)
 
 sigma_kdens <- sigma_kdens[!sapply(sigma_kdens,is.null)]
 
-#return melted data
-get_animationData <- function(sigmaDat){
-  
-  cl <- makeCluster(spec=detectCores()-2)
-  registerDoSNOW(cl)
-  
-  out <- foreach(i=1:length(sigmaDat),.packages=c("reshape2"),.verbose=TRUE,.combine="rbind") %dopar% {
-    dat_i <- melt(sigmaDat[[i]]$z)
-    dat_i$iter <- i
-    return(dat_i)
-  }
-  
-  stopCluster(cl)
-  rm(cl)
-  
-  return(out)
-}
-
-###GGanimate Version###
-
-sigma_aniDat <- get_animationData(sigma_kdens[10:15])
-
-ggplot(data=sigma_aniDat[sigma_aniDat$iter==1,],aes(x=Var1,y=Var2,z=value,fill=value)) +
-  geom_raster() +
-  geom_contour() +
-  guides(fill=FALSE) +
-  theme_bw() +
-  theme(axis.text=element_blank(),axis.ticks=element_blank(),panel.background=element_blank(),panel.grid.minor=element_blank(),panel.grid.major=element_blank(),axis.title=element_blank(),title=element_blank(),panel.border=element_blank())
-
-sigma_ggAni <- ggplot(data=sigma_aniDat,aes(x=Var1,y=Var2,z=value,fill=value,frame=iter)) +
-  geom_raster() +
-  geom_contour() +
-  guides(fill=FALSE) +
-  theme_bw() +
-  theme(axis.text=element_blank(),axis.ticks=element_blank(),panel.background=element_blank(),panel.grid.minor=element_blank(),panel.grid.major=element_blank(),axis.title=element_blank(),title=element_blank(),panel.border=element_blank())
-
-gg_animate(sigma_ggAni)
-
 ###Base plotting with Animation package###
 
 max_x <- max(sapply(sigma_kdens,function(x){max(x$x)}))
@@ -125,21 +86,12 @@ min_x <- min(sapply(sigma_kdens,function(x){min(x$x)}))
 max_y <- max(sapply(sigma_kdens,function(x){max(x$y)}))
 min_y <- min(sapply(sigma_kdens,function(x){min(x$y)}))
 
-library(animation)
+x1 <- seq(-30,30,length=1e3)
+x2 <- seq(-30,30,length=1e3)
+x1x2 <- expand.grid(x1,x2)
+d.banana <- matrix(apply(x1x2, 1, p.log), nrow=1e3)
 
-makeplot <- function(){
-  for(i in 1:500){
-    image(sigma_kdens[[i]],useRaster=T,xaxt="n",yaxt="n",ann=FALSE)
-    contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,add=T,lty=2)
-  }
-}
-
-saveGIF(makeplot(),interval=0.2,width=640,height=640)
-sigma_col <- colorRampPalette(colors=c("#132B43","#56B1F7"))(50)
-
-
-
-
+sigma_col <- colorRampPalette(colors=c("#132B43","#56B1F7"))(100)
 
 makeplot <- function(){
   for(i in 1:length(sigma_kdens)){
@@ -149,9 +101,12 @@ makeplot <- function(){
           col=sigma_col,xlim=c(min_x,max_x),ylim=c(min_y,max_y),add=TRUE)
     contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,
             add=T,lty=2,col="#9cbfe3",xlim=c(min_x,max_x),ylim=c(min_y,max_y))
+    contour(x1, x2, exp(d.banana), add=TRUE, col="#9cbfe3", drawlabels=FALSE)
   }
 }
+
 saveGIF(makeplot(),interval=0.01,ani.width=1024,ani.height=1024)
+
 
 ################################
 ###Goldenstein-Price Function###

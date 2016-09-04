@@ -129,8 +129,8 @@ goldpr <- function(xx){
 }
 
 set.seed(123)
-goldpr1 <- adaptMCMC(target=goldpr,init_theta=c(1,1),covmat=diag(c(1,1)),n_iterations=1e3,
-             adapt_size_start=10,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=20,
+goldpr1 <- adaptMCMC(target=goldpr,init_theta=c(1,1),covmat=diag(c(1,1)),n_iterations=2e3,
+             adapt_size_start=100,acceptance_rate_weight=0,acceptance_window=0,adapt_shape_start=150,
              verbose=FALSE,info=1e2)
 
 par(mfrow=c(1,2))
@@ -191,20 +191,20 @@ x2 <- seq(-5.5,5.5,length=500)
 x1x2 <- expand.grid(x1,x2)
 d.goldpr <- matrix(apply(x1x2, 1, goldpr), nrow=500)
 
-sigma_col <- colorRampPalette(colors=c("#132B43","#56B1F7"))(100) #colors for sampling distribution
-goldpr_col <- heat.colors(50,alpha=0.8) #colors for function contours
+sigma_col <- colorRampPalette(colors=c("#000000","#6dbcf8"))(100) #colors for sampling distribution
+goldpr_col <- heat.colors(50,alpha=0.6) #colors for function contours
 
 ###preparing data for plotting trace of chain###
 
-block <- 55 #how many iterations of chain to print
+block <- 50 #how many iterations of chain to print
 trace_dat <- goldpr1$theta_trace[goldpr_index,]
-trace_col <- rev(colorRampPalette(colors=c("#132B43","#56B1F7"),alpha=0.8)(block)) #colors for trace of chain
+trace_col <- rev(colorRampPalette(colors=c("#000000","#6dbcf8"),alpha=0.8)(block)) #colors for trace of chain
 
 makeplot <- function(){
   for(i in 1:length(sigma_kdens)){  
     
     #set up background color and remove margins
-    par(bg="#132B43",mar=c(0,0,0,0),mgp=c(0,0,0))
+    par(bg="#000000",mar=c(0,0,0,0),mgp=c(0,0,0))
     
     #set up empty plot
     plot(0,0,type="n",axes=FALSE,ann=FALSE,xlim=c(-5,5),ylim=c(-5,5))
@@ -219,7 +219,7 @@ makeplot <- function(){
     
     #plot the sampling distribution contours
     contour(x=sigma_kdens[[i]]$x,y=sigma_kdens[[i]]$y,z=sigma_kdens[[i]]$z,
-            add=T,lty=2,col="#9cbfe3",xlim=c(-5,5),ylim=c(-5,5))
+            add=T,lty=2,col="#9cbfe3",xlim=c(-5,5),ylim=c(-5,5),drawlabels=FALSE)
     
     #plot trace of chain
     if(i > 1){ #can't draw a line of 1 point
@@ -243,6 +243,5 @@ makeplot <- function(){
   } #end for loop
 }
 
-saveGIF(makeplot(),interval=0.01,ani.width=1024,ani.height=1024,
+saveGIF(makeplot(),interval=0.15,ani.width=1024,ani.height=1024,
         movie.name="goldpr_mcmc.gif")
-

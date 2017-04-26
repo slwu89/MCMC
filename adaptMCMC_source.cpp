@@ -1,7 +1,10 @@
 #include <RcppArmadillo.h>
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::depends(RcppProgress)]]
+// [[Rcpp::plugins(cpp11)]]
 #include <progress.hpp>
+#include <random>
+
 using namespace Rcpp;
 
 
@@ -20,6 +23,7 @@ using namespace Rcpp;
 * n_iterations: integer value, how long to run the chain
 * adapt_size_start: number of accepted jumps after which to begin adapting size of proposal covariance matrix
 * adapt_shape_start: number of accepted jumps after which to begin adpating shape of proposal covariance matrix (should set higher than adapt_size_start by 1.5X or 2X at least)
+* seedMH: seed of RNG
 * info: print information on chain every X n_iterations
 * verbose: provide verbose output, this is useful for visualizing adaptive routine
 * adapt_size_cooling: cooling value for scaling size of covariance matrix (default is 0.99, must set between 0 and 1; usually dont need to change)
@@ -28,27 +32,19 @@ using namespace Rcpp;
 */
 
 // MCMC utility functions
-// [[Rcpp::export]]
-arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
-  arma::rowvec Y = rnorm(sigma.n_cols,0,1);
-  arma::rowvec out = mu.t() + Y * arma::chol(sigma);
-  return(out.t());
-}
+// arma::vec mvrnorm_samp(arma::vec mu, arma::mat sigma) {
+//   arma::rowvec Y = rnorm(sigma.n_cols,0,1);
+//   arma::rowvec out = mu.t() + Y * arma::chol(sigma);
+//   return(out.t());
+// }
 
-// [[Rcpp::export]]
-arma::mat mvrnormArma(int n, arma::vec mu, arma::mat sigma) {
-  int ncols = sigma.n_cols; //how many columns in sigma (ie; how many dimension)
-  arma::mat Y = arma::randn(n, ncols); // n draws from N(0,1) 
-  return arma::repmat(mu, 1, n).t() + Y * arma::chol(sigma);
-}
 
-// [[Rcpp::export]]
 arma::mat update_sigma(arma::mat sigma, arma::vec residual, double i){
   arma::mat out = (sigma * (i-1) + (i-1) / i * residual * trans(residual)) / i;
   return(out);
 }
 
-// [[Rcpp::export]]
+
 double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
   
   //define constants
@@ -69,19 +65,24 @@ double mvrnorm_pdf(arma::vec x, arma::vec mu, arma::mat sigma){
 
 
 /*
-* Random Walk MCMC with Adaptive Proposal Kernel
+* Metropolis-Hastings MCMC with Adaptive Proposal Kernel
 * adaptMCMC returns an R list:
 * theta_trace a matrix recording the trace of the sampled parameters
 * sigma_empirical is an array recording the trace of the estimated covariance matrix of the target
 * acceptance_rate is a numeric that is the acceptance rate at the end of the MCMC run
 */
 // [[Rcpp::export]]
-List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, int info, bool verbose, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
+List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, double acceptance_rate_weight, int acceptance_window, int adapt_shape_start, 
+               int info, double seedMH, double adapt_size_cooling = 0.99, double max_scaling_sd = 50.0){
+  
+  std::mt19937 engine(seedMH); //set seed of uniform RNG
+  std::uniform_real_distribution<> uniform(0.0,1.0);
+  std::normal_distribution<> normal(0.0,1.0);
   
   Progress p(0, false); //progress to check for user interrupt
   
   arma::vec theta_current = init_theta;
-  arma:: vec theta_propose = init_theta;
+  arma::vec theta_propose = init_theta;
   arma::mat covmat_proposal = covmat;
   
   arma::mat covmat_proposal_init = covmat_proposal;
@@ -102,23 +103,6 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
   double scaling_multiplier = 1.0;
   arma::mat covmat_empirical = arma::zeros(covmat.n_rows,covmat.n_cols);
   arma::vec theta_mean = theta_current;
-  
-  //prepare extra data for verbose output
-  arma::vec acceptance_trace;
-  arma::vec target_theta_current_trace;
-  arma::vec scaling_sd_trace;
-  arma::cube covmat_proposal_trace;
-  arma::mat residual_trace;
-  arma::mat theta_mean_trace;
-  
-  if(verbose){
-    acceptance_trace = arma::zeros(n_iterations);
-    target_theta_current_trace = arma::zeros(n_iterations);
-    scaling_sd_trace = arma::zeros(n_iterations);
-    covmat_proposal_trace = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
-    residual_trace = arma::zeros(n_iterations,init_theta.n_elem);
-    theta_mean_trace = arma::zeros(n_iterations,init_theta.n_elem);
-  }
   
   //main mcmc loop
   for(int i=1; i<=n_iterations; i++){
@@ -162,7 +146,12 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
     }
     
     //propose new theta
-    theta_propose = mvrnorm_samp(theta_current,covmat_proposal);
+    arma::rowvec Y(covmat_proposal.n_cols);
+    for(int i = 0; i < covmat_proposal.n_cols; i++){
+      Y(i) = normal(engine);
+    }
+    arma::rowvec theta_proposeNew = theta_current.t() + Y * arma::chol(covmat_proposal);
+    theta_propose = theta_proposeNew.t();
     
     //evaluate target distribution at proposed theta
     double target_theta_propose;
@@ -182,7 +171,7 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
     }
     
     //evaluate acceptance probability
-    double A = R::runif(0,1);
+    double A = uniform(engine);
     if(log(A) < log_acceptance){
       //accept proposed parameter set
       is_accepted = true;
@@ -224,34 +213,25 @@ List adaptMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_it
     
     sigma_empirical.slice(i-1) = covmat_empirical;
     
-    if(verbose){
-      acceptance_trace(i-1) = acceptance_rate;
-      scaling_sd_trace(i-1) = scaling_sd;
-      target_theta_current_trace(i-1) = target_theta_current;
-      covmat_proposal_trace.slice(i-1) = covmat_proposal;
-      residual_trace.row(i-1) = residual.t();
-      theta_mean_trace.row(i-1) = theta_mean.t();
-    }
-    
   }
   
-  if(verbose){
-    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate,Named("acceptance_trace")=acceptance_trace,Named("target_theta_current_trace")=target_theta_current_trace,Named("covmat_proposal_trace")=covmat_proposal_trace,Named("residual_trace")=residual_trace,Named("theta_mean_trace")=theta_mean_trace,Named("scaling_sd_trace")=scaling_sd_trace));
-  } else {
-    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
-  }
+  return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
 }
 
 
+// Random Walk Metropolis-Hastings MCMC
 /*
-* Simple Random Walk MCMC with Adaptive Proposal Kernel 
-* adaptMCMC returns an R list:
-* theta_trace a matrix recording the trace of the sampled parameters
-* sigma_empirical is an array recording the trace of the estimated covariance matrix of the target
-* acceptance_rate is a numeric that is the acceptance rate at the end of the MCMC run
+* target is a function that returns the log probability density to sample from; it must take a vector as input
+* init_theta is a vector of initial parameter values
+* covmat is the covariance matrix of the Gaussian transition kernel (proposal density)
+* n_iterations is the number of iterations
 */
-//[[Rcpp::export]]
-List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int adapt_size_start, int adapt_shape_start, int info, bool verbose, double adapt_size_cooling = 0.99){
+// [[Rcpp::export]]
+List rwMCMC(Function target, arma::vec init_theta, arma::mat covmat, int n_iterations, int info, double seedMH){
+  
+  std::mt19937 engine(seedMH); //set seed of uniform RNG
+  std::uniform_real_distribution<> uniform(0.0,1.0);
+  std::normal_distribution<> normal(0.0,1.0);
   
   Progress p(0, false); //progress to check for user interrupt
   
@@ -259,38 +239,16 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
   arma::vec theta_propose = init_theta;
   arma::mat covmat_proposal = covmat;
   
-  arma::mat covmat_proposal_init = covmat_proposal;
-  bool adapting_size = false;
-  bool adapting_shape = false;
-  
-  double target_theta_current = as<double>(wrap(target(theta_current)));
-  
   arma::mat theta_trace = arma::zeros(n_iterations,init_theta.n_elem);
-  arma::cube sigma_empirical = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
   
-  //prepare extra data for verbose output
-  arma::vec acceptance_trace;
-  arma::vec target_theta_current_trace;
-  arma::vec scaling_sd_trace;
-  arma::cube covmat_proposal_trace;
-  arma::mat residual_trace;
-  arma::mat theta_mean_trace;
-  
-  if(verbose){
-    acceptance_trace = arma::zeros(n_iterations);
-    target_theta_current_trace = arma::zeros(n_iterations);
-    scaling_sd_trace = arma::zeros(n_iterations);
-    covmat_proposal_trace = arma::zeros(covmat.n_rows,covmat.n_cols,n_iterations);
-    residual_trace = arma::zeros(n_iterations,init_theta.n_elem);
-    theta_mean_trace = arma::zeros(n_iterations,init_theta.n_elem);
-  }
+  //evaluate target distribution at theta_init
+  double target_theta_current; //evaluate target at current theta
+  target_theta_current = as<double>(wrap(target(theta_current)));
   
   double acceptance_rate = 0.0;
-  double scaling_sd = 1.0;
+  arma::vec acceptance_series;
   
-  arma::mat covmat_empirical = arma::zeros(covmat.n_rows,covmat.n_cols);
-  arma::vec theta_mean = theta_current;
-  
+  //main mcmc loop
   for(int i=1; i<=n_iterations; i++){
     
     //check for user abort
@@ -299,78 +257,60 @@ List adaptMCMC_simple(Function target, arma::vec init_theta, arma::mat covmat, i
       return(List::create(Named("null")=R_NilValue));
     }
     
-    //adaptive mcmc routine
-    if(adapt_size_start != 0 && i >= adapt_size_start && acceptance_rate * i < adapt_shape_start){
-      if(!adapting_size){
-        Rcout << "Begin adapting size of sigma at iter: " << i << std::endl;
-        adapting_size = true;
-      }
-      scaling_sd = scaling_sd * exp(pow(adapt_size_cooling,i - adapt_size_start) * (acceptance_rate - 0.234));
-      covmat_proposal = pow(scaling_sd,2) * covmat_proposal_init;
-    } else if(adapt_shape_start != 0 && acceptance_rate * i >= adapt_shape_start){
-      if(!adapting_shape){
-        Rcout << "Begin adapting shape of sigma at iter: " << i << std::endl;
-        adapting_shape = true;
-      }
-      covmat_proposal = pow(2.38,2)/init_theta.n_elem * covmat_empirical;
-    }
-    
-    //print chain info
+    //print chain diagnostics
     if(i % info == 0){
       // Rcout << "At iter: " << i << ", acceptance rate is: " << acceptance_rate << std::endl;
-      Rcout << "At iter: " << i << ", acceptance rate is: " << acceptance_rate << ", scaling_sd: " << scaling_sd << std::endl;
+      Rcout << "At iter: " << i << ", acceptance rate is: " << acceptance_rate << std::endl;
+      
     }
     
-    theta_propose = mvrnorm_samp(theta_current,covmat_proposal);
+    //propose new theta
+    arma::rowvec Y(covmat_proposal.n_cols);
+    for(int i = 0; i < covmat_proposal.n_cols; i++){
+      Y(i) = normal(engine);
+    }
+    arma::rowvec theta_proposeNew = theta_current.t() + Y * arma::chol(covmat_proposal);
+    theta_propose = theta_proposeNew.t();
+    
+    //evaluate target distribution at proposed theta
     double target_theta_propose;
     target_theta_propose = as<double>(wrap(target(theta_propose)));
-    
     bool is_accepted;
     double log_acceptance;
     
+    //if posterior is 0 immediately reject
     if(!std::isfinite(target_theta_propose)){
-      log_acceptance = -std::numeric_limits<double>::infinity();
       is_accepted = false;
+      log_acceptance = -std::numeric_limits<double>::infinity();
     } else {
+      //compute Metropolis-Hastings ratio (acceptance probability)
       log_acceptance = target_theta_propose - target_theta_current;
       log_acceptance = log_acceptance + mvrnorm_pdf(theta_current,theta_propose,covmat_proposal);
       log_acceptance = log_acceptance - mvrnorm_pdf(theta_propose,theta_current,covmat_proposal);
     }
     
-    double A = R::runif(0,1);
+    //evaluate acceptance probability
+    double A = uniform(engine);
     if(log(A) < log_acceptance){
+      //accept proposed parameter set
+      is_accepted = true;
       theta_current = theta_propose;
       target_theta_current = target_theta_propose;
-      is_accepted = true;
     } else {
       is_accepted = false;
     }
     
+    //store trace of MCMC
     theta_trace.row(i-1) = theta_current.t();
     
-    acceptance_rate = acceptance_rate + (is_accepted - acceptance_rate)/i;
-    
-    arma::vec residual = theta_current - theta_mean;
-    covmat_empirical = update_sigma(covmat_empirical,residual,i);
-    theta_mean = theta_mean + residual/i;
-    
-    sigma_empirical.slice(i-1) = covmat_empirical;
-    
-    //verbose output
-    if(verbose){
-      acceptance_trace(i-1) = acceptance_rate;
-      scaling_sd_trace(i-1) = scaling_sd;
-      target_theta_current_trace(i-1) = target_theta_current;
-      covmat_proposal_trace.slice(i-1) = covmat_proposal;
-      residual_trace.row(i-1) = residual.t();
-      theta_mean_trace.row(i-1) = theta_mean.t();
+    //update acceptance rate
+    if(i == 1){
+      acceptance_rate = is_accepted;
+    } else {
+      acceptance_rate = acceptance_rate + (is_accepted - acceptance_rate) / i;
     }
-
+    
   }
   
-  if(verbose){
-    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate,Named("acceptance_trace")=acceptance_trace,Named("target_theta_current_trace")=target_theta_current_trace,Named("covmat_proposal_trace")=covmat_proposal_trace,Named("residual_trace")=residual_trace,Named("theta_mean_trace")=theta_mean_trace,Named("scaling_sd_trace")=scaling_sd_trace));
-  } else {
-    return(List::create(Named("theta_trace")=theta_trace,Named("sigma_empirical")=sigma_empirical,Named("acceptance_rate")=acceptance_rate));
-  }
+  return(List::create(Named("theta_trace")=theta_trace,Named("acceptance_rate")=acceptance_rate));
 }

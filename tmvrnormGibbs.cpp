@@ -122,7 +122,7 @@ arma::mat rtmvnorm_gibbs(int n, arma::vec mu, arma::mat sigma, arma::vec lower, 
 
       //calculation of conditional expectation and conditional variance
       arma::rowvec slice_i = P.slice(i);
-      arma::vec slice_i_times = slice_i * (negSubCol(x,i) - negSubCol(x,i));
+      arma::vec slice_i_times = slice_i * (negSubCol(x,i) - negSubCol(mu,i));
       double slice_i_times_double = Rcpp::as<double>(wrap(slice_i_times));
       double mu_i = mu(i) + slice_i_times_double;
 
@@ -146,4 +146,18 @@ set.seed(123)
 system.time(tmp <- rtmvnorm_gibbs(1e4,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),c(2,2,50,50)))
 set.seed(123)
 system.time(tmp1 <- tmvtnorm:::rtmvnorm.gibbs(1e4,1:4,diag(1:4),c(-Inf,-Inf,0,0),c(10,10,100,100),start.value = c(2,2,50,50)))
+  */
+
+/***R
+# Example with non diagonal correlation matrix which gives different results
+mean <- c(-1, 1)
+sigma <- matrix(data = c(1.0, -0.5, -0.5, 1.0), ncol = 2, nrow = 2)
+print(sigma)
+set.seed(123)
+tmp <- tmvtnorm:::rtmvnorm.gibbs(1e4, mean, sigma, c(-Inf,0), c(10,10), start.value = c(2,2) )
+set.seed(123)
+tmp1 <- rtmvnorm_gibbs(1e4, mean, sigma, c(-Inf,0), c(10,10), c(2,2) )
+plot(tmp)
+points(tmp1, col='red')
+print(all(tmp==tmp1))
 */
